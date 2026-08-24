@@ -1,0 +1,29 @@
+origin: HKG
+destinations: [KIX, NRT, HND, FUK]
+departure:
+  from: "2026-10-01"
+  to: "2026-10-10"
+trip_length:
+  min_days: 3
+  max_days: 7
+adults: 1
+currency: HKD
+max_price: 2500
+nonstop_only: false
+alerts:
+  price_threshold: 1800
+  drop_percentage: 15
+  deal_score: 75
+  cooldown_hours: 24
+  dedup_hours: 72
+queue:
+  max_jobs_per_run: 8
+  min_interval_seconds: 8
+  priority: [price_threshold, stale, never_checked, popularity]
+scraper:
+  headless: true
+  timeout_ms: 30000
+  retries: 2
+  locale: en-HK
+  base_url: "https://www.trip.com/flights/"
+

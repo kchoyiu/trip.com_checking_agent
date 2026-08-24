@@ -1,0 +1,19 @@
+[Unit]
+Description=Trip.com hotel price scraper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=flightagent
+Group=flightagent
+WorkingDirectory=/opt/flight-agent
+EnvironmentFile=/opt/flight-agent/.env
+ExecStart=/opt/flight-agent/.venv/bin/python /opt/flight-agent/hotel_scraper.py --city 高雄 --check-in 2026-10-04 --check-out 2026-10-07 --output /opt/flight-agent/data.csv --artifacts /opt/flight-agent/artifacts/hotels --history-db /opt/flight-agent/data/hotels.db
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+
