@@ -9,6 +9,9 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 apt-get update
 apt-get install -y python3 python3-venv python3-pip ca-certificates fonts-liberation libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2
 
@@ -37,4 +40,3 @@ systemctl enable --now hotel-scraper.timer
 echo "Installed. Add /opt/flight-agent/.env, then test with:"
 echo "  sudo systemctl start hotel-scraper.service"
 echo "  journalctl -u hotel-scraper.service -n 100 --no-pager"
-
