@@ -30,3 +30,5 @@ If the saved page contains `whaleguard block` or another security interstitial, 
 ## Database and queue
 
 `search_jobs` queues unique date searches; `flight_prices` stores every observation; `notifications` provides cooldown/dedup history. Each run limits jobs and orders by priority, then oldest/never-checked jobs.
+
+For exact hotels, set `HOTEL_TARGET_DETAILS=city|hotel_name|Trip.com_detail_url;...` in `.env`. This is useful when a hotel is not among the first featured cards on its city page. It takes priority over `HOTEL_TARGETS` and writes one CSV per detail URL under `data/`. The desktop URL form `https://hk.trip.com/hotels/detail/?cityEnName=Kaohsiung&cityId=720&hotelId=7932167` can be used as a detail URL. `HOTEL_HEADFUL=true` is for a visible Windows run only; Docker normally remains headless.

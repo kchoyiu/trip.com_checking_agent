@@ -7,3 +7,4 @@ artifacts/
 *.pyc
 data.csv
 debug.log
+.docker-cli-tmp/

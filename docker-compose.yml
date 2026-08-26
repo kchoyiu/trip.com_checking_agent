@@ -1,0 +1,25 @@
+services:
+  hotel-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trip-agent-hotel:local
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    shm_size: "1gb"
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command:
+      - python
+      - docker_scheduler.py
