@@ -7,10 +7,11 @@ class SearchJob:
     origin: str
     destination: str
     depart_date: date
-    return_date: date
+    return_date: Optional[date] = None
     adults: int = 1
     currency: str = "HKD"
     nonstop_only: bool = False
+    airline: str = ""
     priority: int = 0
     id: Optional[int] = None
 
@@ -26,4 +27,3 @@ class FlightPrice:
     price: float
     currency: str
     url: str = ""
-

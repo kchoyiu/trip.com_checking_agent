@@ -1,13 +1,14 @@
-origin: HKG
-destinations: [KIX, NRT, HND, FUK]
-departure:
-  from: "2026-10-01"
-  to: "2026-10-10"
-trip_length:
-  min_days: 3
-  max_days: 7
+# Explicit one-way legs support an open-jaw itinerary.
+legs:
+  - origin: HKG
+    destination: KHH
+    depart_date: "2026-10-04"
+  - origin: TPE
+    destination: HKG
+    depart_date: "2026-10-11"
 adults: 1
 currency: HKD
+airline: "Cathay Pacific"
 max_price: 2500
 nonstop_only: false
 alerts:
@@ -26,4 +27,3 @@ scraper:
   retries: 2
   locale: en-HK
   base_url: "https://www.trip.com/flights/"
-

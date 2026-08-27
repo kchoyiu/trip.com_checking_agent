@@ -9,7 +9,18 @@ Windows-local Python + Playwright Chromium + SQLite + Telegram monitor. It does 
 3. Install packages: `py -m pip install -r requirements.txt`.
 4. Install Chromium: `playwright install chromium`.
 5. Copy `.env.example` to `.env`, create a Telegram bot with BotFather, and set token/chat ID.
-6. Edit `config.yaml`.
+6. Edit `config.yaml`. For a multi-city itinerary, use explicit one-way `legs`, for example:
+
+       legs:
+         - origin: HKG
+           destination: KHH
+           depart_date: "2026-10-04"
+         - origin: TPE
+           destination: HKG
+           depart_date: "2026-10-11"
+       adults: 1
+       currency: HKD
+       airline: "Cathay Pacific"
 
 ## Run
 
@@ -39,9 +50,10 @@ Open the Trip.com flight page in that window and complete any verification yours
 
     TRIP_CDP_URL=http://host.docker.internal:9222
     TRIP_REUSE_CURRENT_PAGE=true
+    TRIP_NAVIGATE_TO_JOB=false
     TRIP_MANUAL_VERIFY_TIMEOUT_SECONDS=180
 
-The agent waits up to 180 seconds for manual verification, then saves the page evidence and stops safely if the verification remains. It never solves or bypasses the verification automatically.
+Keep `TRIP_NAVIGATE_TO_JOB=false` when you have already opened the exact Trip.com result page manually; this preserves the user-visible page. For multiple explicit legs, open one matching result tab per leg in that same CDP Chrome profile; the agent selects tabs by the `dcity`/`acity` route in the URL. Set it to `true` only when your Trip.com deployment accepts the generated date/route query parameters. The agent waits up to 180 seconds for manual verification, then saves the page evidence and stops safely if the verification remains. It never solves or bypasses the verification automatically.
 
 ## Tests
 
@@ -55,6 +67,6 @@ If the saved page contains `whaleguard block` or another security interstitial, 
 
 ## Database and queue
 
-`search_jobs` queues unique date searches; `flight_prices` stores every observation; `notifications` provides cooldown/dedup history. Each run limits jobs and orders by priority, then oldest/never-checked jobs.
+`search_jobs` queues unique date searches; `flight_prices` stores every observation; `notifications` provides cooldown/dedup history. Each run limits the currently configured jobs and orders by priority, then oldest/never-checked jobs. Explicit `legs` searches are one-way; the legacy `origin`/`destinations`/`departure` format remains supported for generated round trips. Set `airline` (or `airlines`) to filter results, with `Cathay Pacific`, `國泰航空`, and `CX` treated as equivalent aliases.
 
 For exact hotels, set `HOTEL_TARGET_DETAILS=city|hotel_name|Trip.com_detail_url;...` in `.env`. This is useful when a hotel is not among the first featured cards on its city page. It takes priority over `HOTEL_TARGETS` and writes one CSV per detail URL under `data/`. The desktop URL form `https://hk.trip.com/hotels/detail/?cityEnName=Kaohsiung&cityId=720&hotelId=7932167` can be used as a detail URL. `HOTEL_HEADFUL=true` is for a visible Windows run only; Docker normally remains headless.

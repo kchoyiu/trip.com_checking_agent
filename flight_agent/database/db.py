@@ -6,7 +6,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS search_jobs (
  id INTEGER PRIMARY KEY, origin TEXT NOT NULL, destination TEXT NOT NULL,
  depart_date TEXT NOT NULL, return_date TEXT NOT NULL, adults INTEGER,
- currency TEXT, nonstop_only INTEGER, priority INTEGER DEFAULT 0,
+ currency TEXT, nonstop_only INTEGER, airline TEXT NOT NULL DEFAULT '', priority INTEGER DEFAULT 0,
  last_checked_at TEXT, created_at TEXT NOT NULL,
  UNIQUE(origin,destination,depart_date,return_date,adults,currency,nonstop_only));
 CREATE TABLE IF NOT EXISTS flight_prices (
@@ -23,14 +23,40 @@ class Database:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(path); self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA); self.conn.commit()
+        self._ensure_column("search_jobs", "airline", "TEXT NOT NULL DEFAULT ''")
+
+    def _ensure_column(self, table, column, definition):
+        columns = {row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            self.conn.commit()
+
     def upsert_job(self, j):
-        self.conn.execute("""INSERT OR IGNORE INTO search_jobs(origin,destination,depart_date,return_date,adults,currency,nonstop_only,priority,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?)""",(j.origin,j.destination,j.depart_date.isoformat(),j.return_date.isoformat(),j.adults,j.currency,int(j.nonstop_only),j.priority,now()))
+        return_date = j.return_date.isoformat() if j.return_date else ""
+        airline = j.airline or ""
+        self.conn.execute("""INSERT OR IGNORE INTO search_jobs(origin,destination,depart_date,return_date,adults,currency,nonstop_only,airline,priority,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",(j.origin,j.destination,j.depart_date.isoformat(),return_date,j.adults,j.currency,int(j.nonstop_only),airline,j.priority,now()))
         self.conn.commit()
-        return self.conn.execute("""SELECT * FROM search_jobs WHERE origin=? AND destination=? AND depart_date=? AND return_date=? AND adults=? AND currency=? AND nonstop_only=?""",
-            (j.origin,j.destination,j.depart_date.isoformat(),j.return_date.isoformat(),j.adults,j.currency,int(j.nonstop_only))).fetchone()
-    def due_jobs(self, limit):
-        return self.conn.execute("SELECT * FROM search_jobs ORDER BY priority DESC, COALESCE(last_checked_at,'') ASC LIMIT ?",(limit,)).fetchall()
+        row = self.conn.execute("""SELECT * FROM search_jobs WHERE origin=? AND destination=? AND depart_date=? AND return_date=? AND adults=? AND currency=? AND nonstop_only=?""",
+            (j.origin,j.destination,j.depart_date.isoformat(),return_date,j.adults,j.currency,int(j.nonstop_only))).fetchone()
+        if row and row["airline"] != airline:
+            self.conn.execute("UPDATE search_jobs SET airline=?, priority=? WHERE id=?", (airline, j.priority, row["id"]))
+            self.conn.commit()
+            row = self.conn.execute("SELECT * FROM search_jobs WHERE id=?", (row["id"],)).fetchone()
+        return row
+    def due_jobs(self, limit, job_ids=None):
+        query = "SELECT * FROM search_jobs"
+        params = []
+        if job_ids is not None:
+            job_ids = [int(job_id) for job_id in job_ids]
+            if not job_ids:
+                return []
+            placeholders = ",".join("?" for _ in job_ids)
+            query += f" WHERE id IN ({placeholders})"
+            params.extend(job_ids)
+        query += " ORDER BY priority DESC, COALESCE(last_checked_at,'') ASC LIMIT ?"
+        params.append(limit)
+        return self.conn.execute(query, params).fetchall()
     def add_prices(self, prices):
         for p in prices:
             self.conn.execute("""INSERT INTO flight_prices(job_id,observed_at,airline,flight_number,depart_time,arrive_time,duration_minutes,stops,price,currency,url)

@@ -10,8 +10,13 @@ class TelegramNotifier:
         return True
 
 def format_deal(job, price, deal):
+    dates = str(job["depart_date"])
+    if job["return_date"]:
+        dates = f"{dates} to {job['return_date']}"
+    else:
+        dates = f"{dates} (one-way)"
     return (f"🔥 Flight deal {job['origin']} → {job['destination']}\n"
-            f"{job['depart_date']} to {job['return_date']}\n"
+            f"{dates}\n"
             f"Price: {price.currency} {price.price:,.0f}\n"
             f"Airline: {price.airline}\n"
             f"Drop: {deal['drop_percentage']:.1f}% | Score: {deal['score']}/100\n"
