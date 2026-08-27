@@ -17,6 +17,32 @@ Windows-local Python + Playwright Chromium + SQLite + Telegram monitor. It does 
 
 The first run creates `data/flights.db`; `run_agent.bat` logs to `logs/agent.log`; failures save screenshots/HTML in `artifacts/`. Add `run_agent.bat` to Windows Task Scheduler, ideally every 6–12 hours.
 
+## Docker
+
+1. Copy `.env.example` to `.env` and fill in a newly generated Telegram bot token and chat ID.
+2. Start the scheduled container with `docker compose up -d --build`.
+3. View logs with `docker compose logs -f`.
+
+The Docker service checks once every hour by default and restarts if it exits unexpectedly. Set `CHECK_INTERVAL_HOURS` in `.env` to change the interval. For a single run, use `docker compose run --rm -e RUN_ONCE=1 trip-com-checking-agent`.
+
+Never commit `.env`; it is ignored by Git and Docker.
+
+### Optional manual Chrome connection for flight checks
+
+When the headless container receives a Trip.com verification page, you can let it read a user-launched Chrome session after you complete the verification manually. This is a user-authorized browser connection, not an anti-bot bypass.
+
+On macOS, start a separate Chrome profile with remote debugging enabled:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="/Users/joekwan/Library/Application Support/TripAgentChrome"
+
+Open the Trip.com flight page in that window and complete any verification yourself. Then add the following to `.env` and restart the flight service:
+
+    TRIP_CDP_URL=http://host.docker.internal:9222
+    TRIP_REUSE_CURRENT_PAGE=true
+    TRIP_MANUAL_VERIFY_TIMEOUT_SECONDS=180
+
+The agent waits up to 180 seconds for manual verification, then saves the page evidence and stops safely if the verification remains. It never solves or bypasses the verification automatically.
+
 ## Tests
 
 Run `py -m pytest -q`. Tests are offline and cover date generation and deal scoring. A live Trip.com run is intentionally not automated.

@@ -7,7 +7,7 @@ import argparse, asyncio, csv, logging, os, random, re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunparse, urlunsplit
 from dotenv import load_dotenv
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 from hotel_engine import price_value, rank_hotels
@@ -18,6 +18,11 @@ from flight_agent.notification.telegram import TelegramNotifier
 LOG = logging.getLogger("hotel_scraper")
 BLOCK_MARKERS = ("captcha", "verify you are human", "robot check", "access denied",
                  "whaleguard", "akamai", "anti-bot", "unusual traffic")
+MONTH_NAMES = {
+    "january": 1, "february": 2, "march": 3, "april": 4,
+    "may": 5, "june": 6, "july": 7, "august": 8,
+    "september": 9, "october": 10, "november": 11, "december": 12,
+}
 CITY_INPUTS = ("#destinationInput", "input[placeholder*='city' i]", "input[placeholder*='城市' i]",
                "input[placeholder*='目的地' i]", "input[name*='city' i]",
                "input[aria-label*='city' i]", "input[aria-label*='目的地' i]",
@@ -114,6 +119,44 @@ def env_flag(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
+async def connect_to_cdp(playwright, cdp_url: str):
+    """Connect to a user-launched Chrome, including Docker Desktop on macOS."""
+    from httpx import AsyncClient
+
+    parsed = urlsplit(cdp_url)
+    if parsed.scheme in {"ws", "wss"}:
+        return await playwright.chromium.connect_over_cdp(cdp_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("HOTEL_CDP_URL must be an http(s) or ws(s) CDP endpoint")
+
+    # Chrome accepts the CDP HTTP endpoint only when the Host header matches
+    # the listener name. Docker Desktop reaches it as host.docker.internal,
+    # while Chrome was launched on localhost.
+    host_header = os.getenv("HOTEL_CDP_HOST_HEADER", "").strip()
+    if not host_header and parsed.hostname == "host.docker.internal":
+        host_header = f"localhost:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
+    headers = {"Host": host_header} if host_header else None
+    version_url = urlunsplit((parsed.scheme, parsed.netloc, "/json/version", "", ""))
+    async with AsyncClient(timeout=10.0) as client:
+        response = await client.get(version_url, headers=headers)
+        response.raise_for_status()
+        version = response.json()
+
+    websocket_url = version.get("webSocketDebuggerUrl")
+    if not websocket_url:
+        raise RuntimeError("Chrome CDP response did not include webSocketDebuggerUrl")
+    websocket = urlsplit(websocket_url)
+    websocket_host = parsed.hostname
+    websocket_port = parsed.port or websocket.port
+    if websocket_port:
+        websocket_host = f"{websocket_host}:{websocket_port}"
+    websocket_url = urlunsplit(
+        (websocket.scheme, websocket_host, websocket.path, websocket.query, websocket.fragment)
+    )
+    LOG.info("Using Chrome CDP WebSocket at %s", websocket_url)
+    return await playwright.chromium.connect_over_cdp(websocket_url, headers=headers)
 
 
 def detail_page_matches(current_url: str, target_url: str) -> bool:
@@ -269,6 +312,14 @@ async def set_date_range(page: Page, check_in: date, check_out: date, timeout_ms
             match = re.search(r"(\d{4}).*?(\d{1,2})", text)
             if match:
                 visible_months.append((int(match.group(1)), int(match.group(2))))
+                continue
+            year_match = re.search(r"\b(20\d{2})\b", text)
+            month_match = next(
+                (name for name in MONTH_NAMES if re.search(rf"\b{name}\b", text, re.I)),
+                None,
+            )
+            if year_match and month_match:
+                visible_months.append((int(year_match.group(1)), MONTH_NAMES[month_match]))
         if wanted in visible_months:
             break
         direction = "next" if not visible_months or visible_months[-1] < wanted else "previous"
@@ -287,26 +338,60 @@ async def set_date_range(page: Page, check_in: date, check_out: date, timeout_ms
             except PlaywrightTimeoutError:
                 continue
         if not clicked:
+            # The current Trip.com calendar renders icon-only controls without
+            # an accessible name on some locales, so keep a class-based
+            # fallback after trying the semantic button names above.
+            icon_classes = (
+                (".c-calendar-icon-next", ".c-calendar-icon-next-mon", "[aria-label='Go to next month']")
+                if direction == "next"
+                else (".c-calendar-icon-prev", ".c-calendar-icon-prev-mon", "[aria-label='Go to previous month']")
+            )
+            for icon_class in icon_classes:
+                button = page.locator(icon_class).first
+                try:
+                    if await button.is_visible(timeout=300):
+                        await button.click(timeout=timeout_ms)
+                        clicked = True
+                        break
+                except PlaywrightTimeoutError:
+                    continue
+        if not clicked:
             raise SelectorError("Could not navigate Trip.com's date picker to the requested month.")
         await page.wait_for_timeout(150)
     else:
         raise SelectorError(f"Could not navigate date picker to {target:%Y-%m}.")
 
     async def choose(day: date):
+        month_name = next(name for name, number in MONTH_NAMES.items() if number == day.month)
         month = page.locator(".c-calendar-month").filter(
-            has_text=re.compile(fr"{day.year}\s*年\s*{day.month}\s*月")
+            has_text=re.compile(
+                fr"(?:{day.year}\s*年\s*{day.month}\s*月|{month_name}\s+{day.year})",
+                re.I,
+            )
         ).first
         if await month.count():
-            cells = month.locator("li.is-allow-hover")
+            cells = month.locator("[role='gridcell'], li.is-allow-hover")
             for index in range(await cells.count()):
                 cell = cells.nth(index)
                 day_node = cell.locator(".day").first
-                if await day_node.count() and _clean(await day_node.inner_text()) == str(day.day):
+                text = _clean(await day_node.inner_text()) if await day_node.count() else _clean(await cell.inner_text())
+                if text == str(day.day) and await cell.is_visible(timeout=300):
                     await cell.click(timeout=timeout_ms)
                     return
-        label = f"{day.year} 年 {day.month} 月 {day.day} 日"
-        cell = page.get_by_role("gridcell", name=re.compile(re.escape(label))).first
-        await cell.click(timeout=timeout_ms)
+        labels = (
+            f"{day.year} 年 {day.month} 月 {day.day} 日",
+            f"{month_name} {day.day}, {day.year}",
+            f"{month_name} {day.day} {day.year}",
+        )
+        for label in labels:
+            cell = page.get_by_role("gridcell", name=re.compile(re.escape(label), re.I)).first
+            try:
+                if await cell.is_visible(timeout=300):
+                    await cell.click(timeout=timeout_ms)
+                    return
+            except PlaywrightTimeoutError:
+                continue
+        raise SelectorError(f"Could not select date {day.isoformat()} from Trip.com's date picker.")
 
     await choose(check_in)
     await page.wait_for_timeout(250)
@@ -723,7 +808,7 @@ async def run(city: str, check_in: date, check_out: date, output: Path, artifact
         locale = os.getenv("HOTEL_LOCALE", "zh-TW")
         if connected_browser:
             LOG.info("Connecting to the user-launched Chrome at %s", cdp_url)
-            browser = await playwright.chromium.connect_over_cdp(cdp_url)
+            browser = await connect_to_cdp(playwright, cdp_url)
             if not browser.contexts:
                 raise RuntimeError("Connected Chrome has no browser context.")
             context = browser.contexts[0]
