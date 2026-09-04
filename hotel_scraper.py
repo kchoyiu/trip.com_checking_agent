@@ -73,6 +73,12 @@ DETAIL_CURRENT_PRICE_SELECTORS = (
     "[data-testid*='current-price' i]",
     "[aria-label*='current price' i]",
 )
+DETAIL_TOTAL_PRICE_SELECTORS = (
+    "[class*='priceExplain' i]",
+    "[data-testid*='total-price' i]",
+    "[data-testid*='totalPrice' i]",
+    "[aria-label*='total price' i]",
+)
 DETAIL_OFFER_EXCLUDED_TERMS = ("早餐", "每人", "每位", "小童", "兒童", "成人", "餐飲")
 CITY_SUGGESTION_SELECTORS = (
     "[role='option']",
@@ -538,7 +544,7 @@ async def _detail_rating(page: Page) -> float | None:
 
 async def _detail_prices(scope) -> list[tuple[float, str, str]]:
     """Return unique currency-labelled prices inside a room-list scope."""
-    async def collect(selectors, exclude_non_room_totals=False):
+    async def collect(selectors, exclude_non_room_totals=False, total_only=False):
         results = []
         seen = set()
         for selector in selectors:
@@ -556,6 +562,10 @@ async def _detail_prices(scope) -> list[tuple[float, str, str]]:
                 if not text or key in seen:
                     continue
                 seen.add(key)
+                if total_only and not any(term in text.casefold() for term in (
+                    "總額", "總價", "合計", "total", "total amount",
+                )):
+                    continue
                 if exclude_non_room_totals and any(term in text for term in (
                     "總額", "早餐", "每人", "每位", "小童", "兒童", "成人", "餐飲",
                 )):
@@ -575,8 +585,18 @@ async def _detail_prices(scope) -> list[tuple[float, str, str]]:
                     results.append((value, parsed, currency))
         return results
 
-    # Trip.com's current offer has a stable semantic class prefix while the
-    # surrounding container also contains the struck-through price and total.
+    price_mode = os.getenv("HOTEL_PRICE_MODE", "total").strip().casefold()
+    if price_mode == "total":
+        # Trip.com exposes the stay total in priceExplain. Prefer it over the
+        # display price, which is commonly a per-night room price.
+        total = await collect(DETAIL_TOTAL_PRICE_SELECTORS, total_only=True)
+        if total:
+            return total
+
+        # Fall back for layouts that do not expose a labelled total. The
+        # warning makes the limitation visible instead of silently claiming
+        # the value is a total.
+        LOG.warning("Trip.com total price was not visible; falling back to current room price")
     current = await collect(DETAIL_CURRENT_PRICE_SELECTORS)
     if current:
         return current

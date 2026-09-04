@@ -94,7 +94,7 @@ async def test_collect_hotel_detail_falls_back_to_visible_offer_card(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_detail_prefers_trip_current_price_over_original_and_total(tmp_path: Path):
+async def test_detail_prefers_trip_total_price_over_room_price(tmp_path: Path):
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True)
         page = await browser.new_page()
@@ -104,7 +104,7 @@ async def test_detail_prefers_trip_current_price_over_original_and_total(tmp_pat
             "https://example.test/hotel/harbor-hotel",
         )
         await browser.close()
-    assert rows[0].price == "HK$509"
+    assert rows[0].price == "HK$1,764"
 
 def test_target_hotel_names_are_normalized():
     assert parse_target_names(" Harbor Hotel, ,Central Inn ") == ("Harbor Hotel", "Central Inn")

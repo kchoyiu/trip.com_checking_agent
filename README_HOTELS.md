@@ -39,6 +39,8 @@ City pages are not a complete hotel directory: they can expose only featured or 
 
     HOTEL_TARGET_DETAILS=高雄|喜迎旅店|https://hk.trip.com/hotels/detail/?cityEnName=Kaohsiung&cityId=720&hotelId=7932167;新北|傑仕堡有氧飯店|https://hk.trip.com/hotels/detail/?cityEnName=New%20Taipei%20City&cityId=7662&hotelId=63341173;台北|路徒PLUS行旅-主題館|https://hk.trip.com/hotels/detail/?cityEnName=Taipei&cityId=617&hotelId=78247238
 
+Set `HOTEL_PRICE_MODE=total` to prefer Trip.com's labelled stay total (including taxes and fees when Trip.com exposes it) over the room's displayed nightly price. The scraper falls back to the current room price only when the live page does not expose a labelled total and writes a warning to the log.
+
 When `HOTEL_TARGET_DETAILS` is set, it takes priority over `HOTEL_TARGETS`; clear or comment out the old `HOTEL_TARGETS` line to avoid confusion. The scheduler writes one CSV per detail URL using the URL's final slug, and stores all observations in the same SQLite history. If the detail page has no dated room price, the run stops with an evidence snapshot; it does not substitute a generic city-list price or bypass an anti-bot response.
 
 The `hk.trip.com/hotels/detail/?cityId=...&hotelId=...` form shown above matches the desktop page URL format. If normal Chrome displays an offer card but a headless run receives HTTP 430, set `HOTEL_HEADFUL=true` only for a Windows visible-browser run; Docker containers normally have no desktop display and should remain headless.
